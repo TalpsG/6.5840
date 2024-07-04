@@ -79,10 +79,9 @@ func Worker(mapf func(string, string) []KeyValue,
 		reply := TaskInfo{}
 		err := c.Call(askmap_rpcname, &args, &reply)
 		if err != nil {
-			log.Println("no more map task : ", err)
+			// log.Println("no more map task : ", err)
 			break
 		}
-		fmt.Println(reply)
 		mapfile, err := os.Open(reply.Filename)
 		if err != nil {
 			log.Fatal("map file open fail :", err)
@@ -109,10 +108,8 @@ func Worker(mapf func(string, string) []KeyValue,
 			}
 			tempfiles[i] = file
 			encoders[i] = json.NewEncoder(file)
-
 		}
 		// 将kv按hash放入临时文件
-		fmt.Println(reply.NReduce)
 
 		for _, kv := range kvs {
 			hashv := ihash(kv.Key) % reply.NReduce
@@ -129,18 +126,18 @@ func Worker(mapf func(string, string) []KeyValue,
 				break
 			}
 		}
-		fmt.Println(reply.Taskid, "finish")
 		// rpc告知服务器完成任务
 		fargs := ResponseMapArgs{TaskId: reply.Taskid}
 		freply := Void{}
 		c.Call(finishmap_rpcname, &fargs, &freply)
+		fmt.Println("finish map: ", fargs)
 	}
 
 	// test reduce
-	//	test_args := TestArgs{Type: PrintWaitReduce}
-	//	fmt.Println("waitlist reduce")
-	//	c.Call(test_rpcname, &test_args, &Void{})
-	//	fmt.Println("call ")
+	//test_args := TestArgs{Type: PrintWaitReduce}
+	//fmt.Println("waitlist reduce")
+	//c.Call(test_rpcname, &test_args, &Void{})
+	//fmt.Println("call ")
 
 	// ask reduce
 	//
@@ -152,6 +149,33 @@ func Worker(mapf func(string, string) []KeyValue,
 			log.Println("no more reduce task :", err)
 			break
 		}
-		fmt.Println("get reduce ", reply)
+		fmt.Println(reply)
+		inter_files := make([]*os.File, reply.Total)
+		inter_decoders := make([]*json.Decoder, reply.Total)
+		for i := 0; i < reply.Total; i++ {
+			filename := fmt.Sprintf("mr-%d-%d", i, reply.Taskid)
+			inter_files[i], err = os.Open(talps_path + filename)
+			if err != nil {
+				log.Fatal("missing inter file :", err)
+				break
+			}
+			inter_decoders[i] = json.NewDecoder(inter_files[i])
+			kvs := make(map[string][]string)
+			var kv KeyValue
+			for {
+				if err := inter_decoders[i].Decode(&kv); err != nil {
+					break
+				}
+				if _, ok := kvs[kv.Key]; !ok {
+					// 不存在就插入一个空的
+					kvs[kv.Key] = make([]string, 0)
+				}
+				kvs[kv.Key] = append(kvs[kv.Key], kv.Value)
+			}
+			// 准备好了reduce需要的参数
+			// kvs的key就是每一个单词，value则是一堆1,长度为key的出现次数
+			// TODO:
+			// reduce 生成每个NReduce个文件，最后由coordinater汇总合并
+		}
 	}
 }

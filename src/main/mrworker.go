@@ -24,9 +24,12 @@ func main() {
 
 	mapf, reducef := loadPlugin(os.Args[1])
 
-	go func() {
-		mr.Worker(mapf, reducef)
-	}()
+	//go func() {
+	//	mr.Worker(mapf, reducef)
+	//}()
+	//go func() {
+	//	mr.Worker(mapf, reducef)
+	//}()
 	mr.Worker(mapf, reducef)
 }
 

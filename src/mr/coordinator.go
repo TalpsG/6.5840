@@ -18,14 +18,17 @@ type TaskInfo struct {
 	Taskid  int
 	NReduce int
 	Start   time.Time
+	// 文件/任务数
+	Total int
 }
 
-func NewMapNode(filename string, taskid int, nReduce int) *ListNode[TaskInfo] {
+func NewMapNode(filename string, taskid int, nReduce int, num int) *ListNode[TaskInfo] {
 	ptr := new(ListNode[TaskInfo])
 	ptr.Value = new(TaskInfo)
 	ptr.Value.Filename = filename
 	ptr.Value.Taskid = taskid
 	ptr.Value.NReduce = nReduce
+	ptr.Value.Total = num
 	return ptr
 }
 
@@ -47,6 +50,7 @@ type Coordinator struct {
 
 	count   int
 	nReduce int
+	total   int
 }
 
 func (node *ListNode[T]) Insert(ptr *ListNode[T]) {
@@ -115,14 +119,16 @@ func (c *Coordinator) ResponseMap(args *ResponseMapArgs, reply *Void) error {
 	}
 
 	node.Release()
-	c.wait_list_for_reduce.Insert(node)
-	fmt.Println("add reduce task ", node.Value)
 
 	if c.wait_list_for_map.Next == c.wait_list_for_map &&
 		c.mapping_list.Next == c.mapping_list {
 		// waitmap和mapping都是空的
 		// 则所有任务都到了waitreduce阶段
+		for i := 0; i < c.nReduce; i++ {
+			c.wait_list_for_reduce.Insert(NewMapNode("", i, c.nReduce, c.total))
+		}
 		c.cv.Broadcast()
+		c.wait_list_for_reduce.Print()
 	}
 	return nil
 }
@@ -145,7 +151,7 @@ func (c *Coordinator) Test(args *TestArgs, reply *Void) error {
 
 func (c *Coordinator) RequestReduce(args *AskReduceArgs, reply *TaskInfo) error {
 	c.mu.Lock()
-	if c.mapping_list.Next != c.mapping_list {
+	if c.mapping_list.Next != c.mapping_list || c.wait_list_for_map.Next != c.wait_list_for_map {
 		c.cv.Wait()
 	}
 	defer c.mu.Unlock()
@@ -156,7 +162,6 @@ func (c *Coordinator) RequestReduce(args *AskReduceArgs, reply *TaskInfo) error 
 		return rpc.ServerError("no reduce task")
 	}
 	node := c.wait_list_for_reduce.Next
-	fmt.Println(node.Value)
 	node.Release()
 	*reply = *node.Value
 	c.reducing_list.Insert(node)
@@ -191,7 +196,7 @@ func (c *Coordinator) Done() bool {
 // main/mrcoordinator.go calls this function.
 // nReduce is the number of reduce tasks to use.
 func MakeCoordinator(files []string, nReduce int) *Coordinator {
-	c := Coordinator{count: 0, nReduce: nReduce}
+	c := Coordinator{count: 0, nReduce: nReduce, total: len(files) - 1}
 	c.cv = sync.NewCond(&c.mu)
 	// 等待map的任务列表
 	c.wait_list_for_map = new(ListNode[TaskInfo])
@@ -216,7 +221,7 @@ func MakeCoordinator(files []string, nReduce int) *Coordinator {
 	// 添加task到队列
 	// 不需要锁，因为不会并发
 	for _, str := range files[1:] {
-		c.wait_list_for_map.Insert(NewMapNode(str, c.count, c.nReduce))
+		c.wait_list_for_map.Insert(NewMapNode(str, c.count, c.nReduce, c.total))
 		c.count += 1
 	}
 	c.count = 0
