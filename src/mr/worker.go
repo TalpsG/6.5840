@@ -39,6 +39,9 @@ type AskReduceArgs struct {
 type ResponseMapArgs struct {
 	TaskId int
 }
+type ResponseReduceArgs struct {
+	Name string
+}
 type Void struct {
 }
 type TestArgs struct {
@@ -152,6 +155,9 @@ func Worker(mapf func(string, string) []KeyValue,
 		fmt.Println(reply)
 		inter_files := make([]*os.File, reply.Total)
 		inter_decoders := make([]*json.Decoder, reply.Total)
+		// reply.Taskid 代表该任务需要处理mr-x-taskid的文件
+		// kvs存储着所有hash到taskid的kv对
+		kvs := make(map[string][]string)
 		for i := 0; i < reply.Total; i++ {
 			filename := fmt.Sprintf("mr-%d-%d", i, reply.Taskid)
 			inter_files[i], err = os.Open(talps_path + filename)
@@ -160,7 +166,6 @@ func Worker(mapf func(string, string) []KeyValue,
 				break
 			}
 			inter_decoders[i] = json.NewDecoder(inter_files[i])
-			kvs := make(map[string][]string)
 			var kv KeyValue
 			for {
 				if err := inter_decoders[i].Decode(&kv); err != nil {
@@ -172,10 +177,30 @@ func Worker(mapf func(string, string) []KeyValue,
 				}
 				kvs[kv.Key] = append(kvs[kv.Key], kv.Value)
 			}
-			// 准备好了reduce需要的参数
-			// kvs的key就是每一个单词，value则是一堆1,长度为key的出现次数
-			// TODO:
-			// reduce 生成每个NReduce个文件，最后由coordinater汇总合并
 		}
+		// 准备好了reduce需要的参数
+		// kvs的key就是每一个单词，value则是一堆1,长度为key的出现次数
+		// TODO:
+		// reduce 生成每个NReduce个文件
+		var keys []string
+		for key := range kvs {
+			keys = append(keys, key)
+		}
+		sort.Strings(keys)
+		reduce_out := fmt.Sprintf("mr-reduce-%d", reply.Taskid)
+		reduce_temp := fmt.Sprintf("mr-reduce-%d-*", reply.Taskid)
+		file, err := os.CreateTemp(talps_path, reduce_temp)
+		if err != nil {
+			log.Panic("reduce CreateTemp : ", err)
+		}
+
+		for _, key := range keys {
+			record := key + " " + reducef(key, kvs[key]) + "\n"
+			file.WriteString(record)
+		}
+		oldname := file.Name()
+		newname := reduce_out
+		file.Close()
+		os.Rename(oldname, talps_path+newname)
 	}
 }
