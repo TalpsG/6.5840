@@ -3,3 +3,7 @@ api.key
 .api.key.trimmed
 *-handin.tar.gz
 /src/main/test
+/src/main/mrcoordinator
+/src/main/mrworker
+/src/main/mr-out-*
+

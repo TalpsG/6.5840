@@ -9,6 +9,7 @@ import (
 	"net/rpc"
 	"os"
 	"sort"
+	"time"
 )
 
 // Map functions return a slice of KeyValue.
@@ -40,13 +41,17 @@ type ResponseMapArgs struct {
 	TaskId int
 }
 type ResponseReduceArgs struct {
-	Name string
+	TaskId int
 }
 type Void struct {
 }
 type TestArgs struct {
 	Type TestType
 }
+type WaitArgs struct {
+	NeedWait bool
+}
+type Flag bool
 
 // use ihash(key) % NReduce to choose the reduce
 // task number for each KeyValue emitted by Map.
@@ -67,6 +72,7 @@ func Worker(mapf func(string, string) []KeyValue,
 	finishmap_rpcname := "Coordinator.ResponseMap"
 	//test_rpcname := "Coordinator.Test"
 	askreduce_rpcname := "Coordinator.RequestReduce"
+	finishreduce_rpcname := "Coordinator.ResponseReduce"
 	// uncomment to send the Example RPC to the coordinator.
 	// CallExample()
 	sockname := coordinatorSock()
@@ -136,12 +142,25 @@ func Worker(mapf func(string, string) []KeyValue,
 		fmt.Println("finish map: ", fargs)
 	}
 
+	fmt.Println("test")
 	// test reduce
 	//test_args := TestArgs{Type: PrintWaitReduce}
 	//fmt.Println("waitlist reduce")
 	//c.Call(test_rpcname, &test_args, &Void{})
 	//fmt.Println("call ")
 
+	wait_rpcname := "Coordinator.WaitReduce"
+	args := AskMapArgs{}
+	map_done := WaitArgs{false}
+	for {
+		c.Call(wait_rpcname, &args, &map_done)
+		if !map_done.NeedWait {
+			time.Sleep(time.Second)
+		} else {
+			break
+		}
+	}
+	fmt.Println("mapping done")
 	// ask reduce
 	//
 	for {
@@ -194,13 +213,25 @@ func Worker(mapf func(string, string) []KeyValue,
 			log.Panic("reduce CreateTemp : ", err)
 		}
 
+		encoder := json.NewEncoder(file)
 		for _, key := range keys {
-			record := key + " " + reducef(key, kvs[key]) + "\n"
-			file.WriteString(record)
+			encoder.Encode(&KeyValue{key, reducef(key, kvs[key])})
 		}
 		oldname := file.Name()
 		newname := reduce_out
 		file.Close()
 		os.Rename(oldname, talps_path+newname)
+		response_arg := ResponseReduceArgs{reply.Taskid}
+		var res_reply Flag
+		err = c.Call(finishreduce_rpcname, &response_arg, &res_reply)
+		if err != nil {
+			log.Fatal("response reduce fail : ", err)
+		}
+		fmt.Println("finish reduce: ", response_arg.TaskId)
+		if res_reply {
+			break
+		}
 	}
+	fmt.Println("all task done")
+
 }
