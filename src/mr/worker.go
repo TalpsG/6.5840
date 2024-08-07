@@ -67,7 +67,7 @@ func Worker(mapf func(string, string) []KeyValue,
 
 	// Your worker implementation here.
 
-	talps_path := "/home/talps/gitrepo/6.5840/src/main/test/"
+	talps_path := "./"
 	askmap_rpcname := "Coordinator.RequestMap"
 	finishmap_rpcname := "Coordinator.ResponseMap"
 	//test_rpcname := "Coordinator.Test"
@@ -88,9 +88,11 @@ func Worker(mapf func(string, string) []KeyValue,
 		reply := TaskInfo{}
 		err := c.Call(askmap_rpcname, &args, &reply)
 		if err != nil {
-			// log.Println("no more map task : ", err)
+			log.Println("no more map task : ", err)
 			break
 		}
+
+		// fmt.Println("map task ", reply)
 		mapfile, err := os.Open(reply.Filename)
 		if err != nil {
 			log.Fatal("map file open fail :", err)
@@ -139,10 +141,10 @@ func Worker(mapf func(string, string) []KeyValue,
 		fargs := ResponseMapArgs{TaskId: reply.Taskid}
 		freply := Void{}
 		c.Call(finishmap_rpcname, &fargs, &freply)
-		fmt.Println("finish map: ", fargs)
+
+		// fmt.Println("finish map task ", reply)
 	}
 
-	fmt.Println("test")
 	// test reduce
 	//test_args := TestArgs{Type: PrintWaitReduce}
 	//fmt.Println("waitlist reduce")
@@ -160,7 +162,6 @@ func Worker(mapf func(string, string) []KeyValue,
 			break
 		}
 	}
-	fmt.Println("mapping done")
 	// ask reduce
 	//
 	for {
@@ -171,7 +172,7 @@ func Worker(mapf func(string, string) []KeyValue,
 			log.Println("no more reduce task :", err)
 			break
 		}
-		fmt.Println(reply)
+		// fmt.Println("reduce task ", reply)
 		inter_files := make([]*os.File, reply.Total)
 		inter_decoders := make([]*json.Decoder, reply.Total)
 		// reply.Taskid 代表该任务需要处理mr-x-taskid的文件
@@ -205,7 +206,6 @@ func Worker(mapf func(string, string) []KeyValue,
 		for key := range kvs {
 			keys = append(keys, key)
 		}
-		sort.Strings(keys)
 		reduce_out := fmt.Sprintf("mr-reduce-%d", reply.Taskid)
 		reduce_temp := fmt.Sprintf("mr-reduce-%d-*", reply.Taskid)
 		file, err := os.CreateTemp(talps_path, reduce_temp)
@@ -227,11 +227,10 @@ func Worker(mapf func(string, string) []KeyValue,
 		if err != nil {
 			log.Fatal("response reduce fail : ", err)
 		}
-		fmt.Println("finish reduce: ", response_arg.TaskId)
 		if res_reply {
 			break
 		}
+		// fmt.Println("finish reduce task ", reply)
 	}
-	fmt.Println("all task done")
 
 }

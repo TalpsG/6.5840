@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/rpc"
 	"os"
+	"sort"
 	"sync"
 	"time"
 )
@@ -77,7 +78,6 @@ func (node *ListNode[TaskInfo]) Print() {
 		if ptr == node {
 			return
 		}
-		fmt.Println(ptr.Value)
 		ptr = ptr.Next
 	}
 }
@@ -96,12 +96,25 @@ func (c *Coordinator) RequestMap(args *AskMapArgs, reply *TaskInfo) error {
 	node.Release()
 	*reply = *node.Value
 	c.mapping_list.Insert(node)
+	//fmt.Println("co map", *reply)
+	if node.Value.Taskid == 6 {
+		//fmt.Println("there should be one task rest")
+		ptr := c.wait_list_for_map.Next
+		for {
+			if ptr == c.wait_list_for_map {
+				break
+			}
+			//	fmt.Println(ptr.Value)
+			ptr = ptr.Next
+		}
+	}
 	return nil
 
 }
 func (c *Coordinator) ResponseMap(args *ResponseMapArgs, reply *Void) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	// fmt.Println("co finish map", *args)
 	taskid := args.TaskId
 	node := c.mapping_list.Next
 	if node == c.mapping_list {
@@ -164,7 +177,6 @@ func (c *Coordinator) Test(args *TestArgs, reply *Void) error {
 	case PrintReducing:
 		c.reducing_list.Print()
 	}
-	fmt.Println()
 	return nil
 }
 
@@ -179,7 +191,6 @@ func (c *Coordinator) RequestReduce(args *AskReduceArgs, reply *TaskInfo) error 
 	}
 	node := c.wait_list_for_reduce.Next
 	node.Release()
-	fmt.Println("reducing", node.Value)
 	*reply = *node.Value
 	c.reducing_list.Insert(node)
 	return nil
@@ -205,7 +216,6 @@ func (c *Coordinator) ResponseReduce(args *ResponseReduceArgs, reply *Flag) erro
 				c.done = true
 				*reply = true
 			}
-			fmt.Println("reduce finish", node.Value)
 			return nil
 		}
 	}
@@ -227,7 +237,7 @@ func (c *Coordinator) server() {
 }
 func (c *Coordinator) Merge() {
 	file_pattern := "mr-reduce-%d"
-	talps_path := "/home/talps/gitrepo/6.5840/src/main/"
+	talps_path := "./"
 	pattern := "mr-out-0-*"
 	out, err := os.CreateTemp(talps_path, pattern)
 	if err != nil {
@@ -237,7 +247,7 @@ func (c *Coordinator) Merge() {
 	for i := 0; i < c.nReduce; i++ {
 		filename := fmt.Sprintf(file_pattern, i)
 
-		file, err := os.Open(talps_path + "test/" + filename)
+		file, err := os.Open(talps_path + filename)
 		if err != nil {
 			log.Fatal("merge fail : ", err)
 		}
@@ -250,10 +260,8 @@ func (c *Coordinator) Merge() {
 			kvs = append(kvs, kv)
 		}
 	}
+	sort.Sort(ByKey(kvs))
 	for _, kv := range kvs {
-		if kv.Key == "A" {
-			fmt.Println(kv)
-		}
 		temp := kv.Key + " " + kv.Value + "\n"
 		out.WriteString(temp)
 	}
@@ -261,7 +269,6 @@ func (c *Coordinator) Merge() {
 	out.Close()
 	os.Rename(oldname, talps_path+"mr-out-0")
 
-	fmt.Println("merge finish")
 }
 
 // main/mrcoordinator.go calls Done() periodically to find out
@@ -281,7 +288,7 @@ func (c *Coordinator) Done() bool {
 // main/mrcoordinator.go calls this function.
 // nReduce is the number of reduce tasks to use.
 func MakeCoordinator(files []string, nReduce int) *Coordinator {
-	c := Coordinator{count: 0, nReduce: nReduce, total: len(files) - 1}
+	c := Coordinator{count: 0, nReduce: nReduce, total: len(files)}
 	// 等待map的任务列表
 	c.wait_list_for_map = new(ListNode[TaskInfo])
 	c.wait_list_for_map.Prev = c.wait_list_for_map
@@ -304,7 +311,7 @@ func MakeCoordinator(files []string, nReduce int) *Coordinator {
 
 	// 添加task到队列
 	// 不需要锁，因为不会并发
-	for _, str := range files[1:] {
+	for _, str := range files {
 		c.wait_list_for_map.Insert(NewMapNode(str, c.count, c.nReduce, c.total))
 		c.count += 1
 	}
@@ -315,10 +322,10 @@ func MakeCoordinator(files []string, nReduce int) *Coordinator {
 		if ptr == c.wait_list_for_map {
 			break
 		}
-		fmt.Println(ptr.Value)
 		ptr = ptr.Next
 	}
 
 	c.server()
+	//fmt.Println("total ", c.total)
 	return &c
 }
