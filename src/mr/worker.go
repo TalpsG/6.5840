@@ -92,7 +92,7 @@ func Worker(mapf func(string, string) []KeyValue,
 			break
 		}
 
-		// fmt.Println("map task ", reply)
+		fmt.Println("map task ", reply)
 		mapfile, err := os.Open(reply.Filename)
 		if err != nil {
 			log.Fatal("map file open fail :", err)
@@ -142,14 +142,14 @@ func Worker(mapf func(string, string) []KeyValue,
 		freply := Void{}
 		c.Call(finishmap_rpcname, &fargs, &freply)
 
-		// fmt.Println("finish map task ", reply)
+		fmt.Println("finish map task ", reply)
 	}
 
 	// test reduce
 	//test_args := TestArgs{Type: PrintWaitReduce}
-	//fmt.Println("waitlist reduce")
+	fmt.Println("waitlist reduce")
 	//c.Call(test_rpcname, &test_args, &Void{})
-	//fmt.Println("call ")
+	fmt.Println("call ")
 
 	wait_rpcname := "Coordinator.WaitReduce"
 	args := AskMapArgs{}
@@ -230,7 +230,7 @@ func Worker(mapf func(string, string) []KeyValue,
 		if res_reply {
 			break
 		}
-		// fmt.Println("finish reduce task ", reply)
+		fmt.Println("finish reduce task ", reply)
 	}
 
 }

@@ -19,9 +19,11 @@ type TaskInfo struct {
 
 	Taskid  int
 	NReduce int
-	Start   time.Time
 	// 文件/任务数
 	Total int
+
+	// 计数器，判断超时
+	Cnt int
 }
 
 func NewMapNode(filename string, taskid int, nReduce int, num int) *ListNode[TaskInfo] {
@@ -54,7 +56,8 @@ type Coordinator struct {
 	nReduce int
 	total   int
 
-	done bool
+	done     bool
+	reducing bool
 }
 
 func (node *ListNode[T]) Insert(ptr *ListNode[T]) {
@@ -96,15 +99,15 @@ func (c *Coordinator) RequestMap(args *AskMapArgs, reply *TaskInfo) error {
 	node.Release()
 	*reply = *node.Value
 	c.mapping_list.Insert(node)
-	//fmt.Println("co map", *reply)
+	fmt.Println("co map", *reply)
 	if node.Value.Taskid == 6 {
-		//fmt.Println("there should be one task rest")
+		fmt.Println("there should be one task rest")
 		ptr := c.wait_list_for_map.Next
 		for {
 			if ptr == c.wait_list_for_map {
 				break
 			}
-			//	fmt.Println(ptr.Value)
+			fmt.Println(ptr.Value)
 			ptr = ptr.Next
 		}
 	}
@@ -114,7 +117,7 @@ func (c *Coordinator) RequestMap(args *AskMapArgs, reply *TaskInfo) error {
 func (c *Coordinator) ResponseMap(args *ResponseMapArgs, reply *Void) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	// fmt.Println("co finish map", *args)
+	fmt.Println("co finish map", *args)
 	taskid := args.TaskId
 	node := c.mapping_list.Next
 	if node == c.mapping_list {
@@ -140,6 +143,7 @@ func (c *Coordinator) ResponseMap(args *ResponseMapArgs, reply *Void) error {
 		c.mapping_list.Next == c.mapping_list {
 		// waitmap和mapping都是空的
 		// 则所有任务都到了waitreduce阶段
+		c.reducing = true
 		for i := 0; i < c.nReduce; i++ {
 			c.wait_list_for_reduce.Insert(NewMapNode("", i, c.nReduce, c.total))
 		}
@@ -193,6 +197,7 @@ func (c *Coordinator) RequestReduce(args *AskReduceArgs, reply *TaskInfo) error 
 	node.Release()
 	*reply = *node.Value
 	c.reducing_list.Insert(node)
+	fmt.Println("co reduce", *reply)
 	return nil
 }
 func (c *Coordinator) ResponseReduce(args *ResponseReduceArgs, reply *Flag) error {
@@ -208,6 +213,7 @@ func (c *Coordinator) ResponseReduce(args *ResponseReduceArgs, reply *Flag) erro
 	for node != c.reducing_list {
 		if node.Value.Taskid == args.TaskId {
 			node.Release()
+			fmt.Println("finish reduce", *args)
 
 			*reply = false
 			if c.reducing_list.Next == c.reducing_list && c.wait_list_for_reduce.Next == c.wait_list_for_reduce {
@@ -279,8 +285,14 @@ func (c *Coordinator) Done() bool {
 	// Your code here.
 
 	c.mu.Lock()
+	defer c.mu.Unlock()
 	ret = c.done
-	c.mu.Unlock()
+	if ret == false {
+		if c.reducing {
+			// TODO
+			// 给所有reduce任务的计数器++
+		}
+	}
 	return ret
 }
 
@@ -326,6 +338,6 @@ func MakeCoordinator(files []string, nReduce int) *Coordinator {
 	}
 
 	c.server()
-	//fmt.Println("total ", c.total)
+	fmt.Println("total ", c.total)
 	return &c
 }

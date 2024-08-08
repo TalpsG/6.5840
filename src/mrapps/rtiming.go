@@ -40,6 +40,7 @@ func nparallel(phase string) int {
 		pat := fmt.Sprintf("mr-worker-%s-%%d", phase)
 		n, err := fmt.Sscanf(name, pat, &xpid)
 		if n == 1 && err == nil {
+			fmt.Println(xpid)
 			err := syscall.Kill(xpid, 0)
 			if err == nil {
 				// if err == nil, xpid is alive.
@@ -79,6 +80,7 @@ func Reduce(key string, values []string) string {
 	n := nparallel("reduce")
 
 	val := fmt.Sprintf("%d", n)
+	fmt.Println(val)
 
 	return val
 }
